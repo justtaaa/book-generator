@@ -7,8 +7,8 @@ def main():
     book_title = input("Enter the book title: ")
     book_description = input("Enter the book description: ")
     run_generate_contents_and_save_book(
-        title=book_title,
-        description=book_description
+        book_title=book_title,
+        book_description=book_description
     )
     print(f"Book '{book_title}' contents generated successfully.")
 
