@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import generate_outline, parse_outline
+from generate_outline import load_outline_from_file, parse_outline, extract_title_and_description
 from tqdm import tqdm
 import re
 
@@ -17,19 +17,48 @@ client = OpenAI(
 
 def generate_parts(title: str, description: str, selectedChapter: int, chapters: list[str], selectedSection: int, sections: list[list[str]], selectedItem: int, items: list[list[list[str]]]) -> str:
     prompt = f"""
-    The book's name is {title}.\n
-    The description of the book is {description}.\n
-    Here is the subsection we are interested in:\n
-    Chapter {selectedChapter + 1}. {chapters[selectedChapter]}\n
-    \tSection {selectedSection + 1}. {sections[selectedChapter][selectedSection]}\n
-    \t\tSubsection {selectedItem + 1}. {items[selectedChapter][selectedSection][selectedItem]}\n\n
-    Give a list of the parts that should be included in the subsection {items[selectedChapter][selectedSection][selectedItem]}.\n
-    The result should be formatted as follows:\n
-    -Introductory point\n
-    -Explanation of the point\n
-    -Another point\n
-    ...\n
+    You are a **textbook learning designer and author**, working on a book titled *"{title}"*.
+
+    ### Book Description
+    {description}
+
+    ### Current Focus
+    We are developing the structure for a subsection of the book:
+
+    - **Chapter {selectedChapter + 1}:** {chapters[selectedChapter]}
+    - **Section {selectedSection + 1}:** {sections[selectedChapter][selectedSection]}
+    - **Subsection {selectedItem + 1}:** {items[selectedChapter][selectedSection][selectedItem]}
+
+    ---
+
+    ### Task
+    Break down this subsection into a **clear, logical sequence of 4–6 parts**. These parts will become major subtopics or conceptual chunks that will later be developed into 1000-word textbook sections.
+
+    Each part should:
+    - Represent a distinct **concept, method, principle, or perspective**.
+    - Be phrased as a **concise, self-contained title** (not a full sentence).
+    - Progress in a **logical educational order** (intro → build-up → variations or use cases → advanced aspect → reflection or summary).
+
+    These parts will serve as learning blocks for **second-year undergraduates** and **junior-level software developers**. Structure them to **scaffold knowledge gradually** and avoid overlap.
+
+    ---
+
+    ### Output Format
+    Return the list in plain text, with each part as a bullet point (using a hyphen “-”).
+
+    Example:
+    - Introduction to the Topic
+    - Key Concepts and Terminology
+    - Practical Applications
+    - Advanced Considerations
+    - Summary and Reflection
+
+    ---
+
+    Now generate the list of parts for:
+    **“{items[selectedChapter][selectedSection][selectedItem]}”**
     """
+
     
     response = client.chat.completions.create(
         model="gpt-4.1-2025-04-14",
@@ -83,10 +112,8 @@ def run_generate_parts_for_all(title: str, description: str, chapters: list[str]
     return parts
 
 if __name__ == "__main__":
-    book_title = "The Art of Programming"
-    book_description = "A comprehensive guide to mastering programming concepts, techniques, and best practices for aspiring and experienced developers."
-
-    raw_outline = generate_outline(book_title, book_description)
+    raw_outline = load_outline_from_file("outline.md")
+    book_title, book_description = extract_title_and_description(raw_outline)
     print("=== RAW OUTLINE ===")
     print(raw_outline)
 

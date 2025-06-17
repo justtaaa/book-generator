@@ -12,3 +12,6 @@ wheels/
 .env
 
 my_full_book/
+my_one_chapter_test/
+
+outline.md
