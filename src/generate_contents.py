@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import generate_outline, parse_outline
+from generate_outline import load_outline_from_file, parse_outline, extract_title_and_description
 from generate_parts import run_generate_parts_for_all
 from tqdm import tqdm
 from yaspin import yaspin
@@ -17,6 +17,7 @@ client = OpenAI(
     api_key=openai_api_key,
 )
 
+
 def generate_contents(title: str, description: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]],) -> str:
     # 1) Build a short “context” block listing what prior parts covered
     context_block = ""
@@ -31,7 +32,13 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
 
     # 2) Instruct the model not to overlap
     prompt = f"""
-    You are writing “The Art of Programming,” a comprehensive guide to mastering programming concepts, techniques, and best practices.
+    You are a **textbook learning author**, tasked with generating detailed textbook content for a professional-quality book titled *“{title}"*
+    
+    Your role is to:
+    - Design and write engaging, structured, and comprehensive textbook sections.
+    - Tailor the material primarily to **second-year undergraduate students**, while remaining accessible and valuable to **professional software developers**. 
+    Use a tone that is clear, professional, engaging, and moderately technical—balancing academic rigor with accessibility.
+    
 
     Book title: {title}
     Book description: {description}
@@ -47,11 +54,14 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     {textwrap.dedent(context_block)}
 
     **Instructions for this part:**
-    - Produce **at least 1000 words**.
-    - Focus **only** on “{part_title}.” 
-    - Avoid repeating any ideas, examples, or phrasing that have already appeared in prior parts (see summaries above).
-    - If you need to reference earlier parts for continuity, do so briefly and then build new material.
-    - Keep tone and style consistent with previous parts.
+    - Produce **at least 1000 words** of clear, structured, and pedagogically sound textbook content. Use paragraphs and subheadings as needed.
+    - Focus **only** on “{part_title}.”  — do not include material from future parts.
+    - **Do not repeat** analogies, examples, or definitions already used—introduce fresh perspectives or deepen the previous ones.
+    - Use a consistent tone and writing style appropriate for educational materials:  
+        - Clear and professional, with **technical depth and gentle scaffolding**  
+        - Include **metaphors, analogies, practical examples**, and **case studies** as needed  
+        - When using code, keep it readable and properly explained  
+    - Maintain a consistent voice and structure across parts.
 
     Begin now:
     """
@@ -64,11 +74,12 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     return response.choices[0].message.content
 
 
-def run_generate_contents_and_save_book(book_title: str, book_description: str, output_dir: str = "book_output"):
+def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False):
 
     with yaspin(text="Generating the Outline...", color="yellow") as spinner:
         try:
-            raw_outline = generate_outline(book_title, book_description)
+            raw_outline = load_outline_from_file("outline.md")
+            book_title, book_description = extract_title_and_description(raw_outline)
             spinner.ok("✔")
         except Exception as e:
             spinner.fail("✘")
@@ -76,6 +87,20 @@ def run_generate_contents_and_save_book(book_title: str, book_description: str, 
             return
         
     chapters, sections, items = parse_outline(raw_outline)
+    
+    if debug:
+        chapters = chapters[:1]                 # Only Chapter 1
+        sections = [sections[0]]                # All sections in Chapter 1
+
+        chapter_items = items[0]
+        items = []
+        for section_items in chapter_items:
+            half_count = max(1, len(section_items) // 2)
+            items.append(section_items[:half_count])
+        items = [items]
+
+
+
 
     parts = run_generate_parts_for_all(
         title=book_title,
@@ -180,15 +205,7 @@ def run_generate_contents_and_save_book(book_title: str, book_description: str, 
     print(f"📚 All contents generated and saved into:\n    {book_path}")
     
 if __name__ == "__main__":
-    book_title = "The Art of Programming"
-    book_description = (
-        "A comprehensive guide to mastering programming concepts, "
-        "techniques, and best practices for aspiring and experienced developers."
-    )
-
-    # (Assume you already have chapters, sections, items, and parts.)
     run_generate_contents_and_save_book(
-        book_title=book_title,
-        book_description=book_description,
-        output_dir="my_full_book"
+        output_dir="my_one_chapter_test",
+        debug=False
     )
