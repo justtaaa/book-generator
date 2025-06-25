@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import load_outline_from_file, parse_outline, extract_title_and_description
+from generate_outline import load_outline_from_file, parse_outline, extract_outline_metadata
 from generate_parts import run_generate_parts_for_all
 from tqdm import tqdm
 from yaspin import yaspin
@@ -10,15 +10,18 @@ import textwrap
 load_dotenv()
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_endpoint = os.getenv("OPENAI_API_ENDPOINT")
+
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set.")
 
 client = OpenAI(
     api_key=openai_api_key,
+    base_url=openai_endpoint
 )
 
 
-def generate_contents(title: str, description: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]],) -> str:
+def generate_contents(title: str, description: str, audience: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]],) -> str:
     # 1) Build a short “context” block listing what prior parts covered
     context_block = ""
     if previous_parts_titles:
@@ -36,7 +39,7 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     
     Your role is to:
     - Design and write engaging, structured, and comprehensive textbook sections.
-    - Tailor the material primarily to **second-year undergraduate students**, while remaining accessible and valuable to **professional software developers**. 
+    - Tailor the material to the following audience: **{audience}**
     Use a tone that is clear, professional, engaging, and moderately technical—balancing academic rigor with accessibility.
     
 
@@ -79,7 +82,10 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
     with yaspin(text="Generating the Outline...", color="yellow") as spinner:
         try:
             raw_outline = load_outline_from_file("outline.md")
-            book_title, book_description = extract_title_and_description(raw_outline)
+            metadata = extract_outline_metadata(raw_outline)
+            book_title = metadata["title"]
+            book_description = metadata["description"]
+            audience = metadata["audience"]
             spinner.ok("✔")
         except Exception as e:
             spinner.fail("✘")
@@ -100,11 +106,10 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
         items = [items]
 
 
-
-
     parts = run_generate_parts_for_all(
         title=book_title,
         description=book_description,
+        audience=audience,
         chapters=chapters,
         sections=sections,
         items=items
@@ -175,6 +180,7 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
                         content_text = generate_contents(
                             title=book_title,
                             description=book_description,
+                            audience=audience,
                             selectedChapter=c,
                             selectedSection=s,
                             selectedItem=i,
