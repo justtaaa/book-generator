@@ -1,7 +1,7 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import load_outline_from_file, parse_outline, extract_outline_metadata
+from src.generate_outline import load_outline_from_file, parse_outline, extract_outline_metadata
 from tqdm import tqdm
 import re
 
