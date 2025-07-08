@@ -43,15 +43,20 @@ if uploaded_file:
     debug = st.checkbox("Enable Debug Mode (Chapter 1 only)", value=True)
     output_dir = st.text_input("Output Directory", value="book_output")
 
-    if st.button("🚀 Generate Book"):
+    if st.button("Generate Book"):
+        status_placeholder = st.empty()
+        live_output_area = st.container()  # Reserve a scrollable space for book content
+        status_placeholder = st.empty()    # Optional: still show part-by-part status
+
+
         with st.spinner("Generating textbook..."):
             try:
-                run_generate_contents_and_save_book(output_dir=output_dir, debug=debug)
-                st.success(f"✅ Book generated in `{output_dir}`")
+                run_generate_contents_and_save_book(output_dir=output_dir, debug=debug, status_area=status_placeholder, live_output_area=live_output_area)
+                st.success(f"Book generated in `{output_dir}`")
 
                 book_path = os.path.join(output_dir, f"{metadata['title']}.txt")
                 if os.path.exists(book_path):
                     with open(book_path, "r", encoding="utf-8") as book_file:
-                        st.download_button("📥 Download Book", book_file.read(), file_name=os.path.basename(book_path))
+                        st.download_button("Download Book", book_file.read(), file_name=os.path.basename(book_path))
             except Exception as e:
-                st.error(f"❌ Generation failed: {e}")
+                st.error(f"Generation failed: {e}")

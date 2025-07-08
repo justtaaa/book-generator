@@ -77,11 +77,11 @@ def generate_contents(title: str, description: str, audience: str, selectedChapt
     return response.choices[0].message.content
 
 
-def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False):
+def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False, status_area=None, live_output_area=None):
 
     with yaspin(text="Generating the Outline...", color="yellow") as spinner:
         try:
-            raw_outline = load_outline_from_file("outline.md")
+            raw_outline = load_outline_from_file("src/outline.md")
             metadata = extract_outline_metadata(raw_outline)
             book_title = metadata["title"]
             book_description = metadata["description"]
@@ -175,6 +175,10 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
                     previous_contents = []
 
                     for p, part_title in enumerate(parts[c][s][i]):
+                        if status_area:
+                            status_area.markdown(
+                                f"✍️ Generating **Chapter {c+1}**, Section {s+1}, Item {i+1}, Part {p+1}**: {part_title}..."
+    )
                         f.write(f"PART {p+1}. {part_title}\n\n")
                         
                         content_text = generate_contents(
@@ -191,7 +195,13 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
                             chapters=chapters,
                             sections=sections,
                             items=items
-                        )  
+                        )
+                        
+                        # ✅ DISPLAY the generated part live in the UI
+                        if live_output_area:
+                            live_output_area.markdown(f"#### 📘 Chapter {c+1}, Section {s+1}, Item {i+1}, Part {p+1}: *{part_title}*")
+                            live_output_area.markdown(content_text.strip())
+
 
                         f.write(content_text.strip() + "\n\n")
 
