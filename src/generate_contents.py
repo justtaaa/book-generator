@@ -6,6 +6,7 @@ from src.generate_parts import run_generate_parts_for_all
 from tqdm import tqdm
 from yaspin import yaspin
 import textwrap
+import pypandoc
 
 load_dotenv()
 
@@ -21,7 +22,9 @@ client = OpenAI(
 )
 
 
-def generate_contents(title: str, description: str, audience: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]],) -> str:
+def generate_contents(title: str, description: str, audience: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]], extra_context: str = "") -> str:
+    import textwrap
+    
     # 1) Build a short “context” block listing what prior parts covered
     context_block = ""
     if previous_parts_titles:
@@ -32,6 +35,7 @@ def generate_contents(title: str, description: str, audience: str, selectedChapt
             snippet = " ".join(pcontent.strip().split()[:50])
             context_block += f"\"{snippet}...\"\n\n"
         context_block += "\n"
+    
 
     # 2) Instruct the model not to overlap
     prompt = f"""
@@ -69,6 +73,10 @@ def generate_contents(title: str, description: str, audience: str, selectedChapt
     Begin now:
     """
 
+    if extra_context:
+        prompt += f"\n\n### Additional Context Provided by User:\n{textwrap.dedent(extra_context[:2000])}..."
+
+
     response = client.chat.completions.create(
         model="gpt-4.1-2025-04-14",
         messages=[{"role": "user", "content": prompt}],
@@ -77,7 +85,7 @@ def generate_contents(title: str, description: str, audience: str, selectedChapt
     return response.choices[0].message.content
 
 
-def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False, status_area=None, live_output_area=None):
+def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False, status_area=None, live_output_area=None, extra_context: str = ""):
 
     with yaspin(text="Generating the Outline...", color="yellow") as spinner:
         try:
@@ -96,7 +104,8 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
     
     if debug:
         chapters = chapters[:1]                 # Only Chapter 1
-        sections = [sections[0]]                # All sections in Chapter 1
+        sections = [sections[0][:1]]
+        items = [[[items[0][0][0]]]]            # Only one item with one part
 
         chapter_items = items[0]
         items = []
@@ -123,9 +132,11 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
 
     # 1) Prepare output directory and file handle
     os.makedirs(output_dir, exist_ok=True)
-    book_path = os.path.join(output_dir, f"{book_title}.txt")
+    book_path_md = os.path.join(output_dir, f"{book_title}.md")
+    book_path_docx = os.path.join(output_dir, f"{book_title}.docx")
 
-    with open(book_path, "w", encoding="utf-8") as f:
+
+    with open(book_path_md, "w", encoding="utf-8") as f:
         # ──────────────────────────────────────────────────────────────────────
         # A) Title Page
         # ──────────────────────────────────────────────────────────────────────
@@ -218,10 +229,20 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
         
         pbar.close()
         
-    print(f"📚 All contents generated and saved into:\n    {book_path}")
+    print(f"📚 All contents generated and saved into:\n    {book_path_md}")
+    
+    try:
+        output = pypandoc.convert_file(book_path_md, 'docx', outputfile=book_path_docx)
+        print(f"📄 Converted to DOCX: {book_path_docx}")
+    except Exception as e:
+        print(f"❌ Error converting to DOCX: {e}")
+
     
 if __name__ == "__main__":
     run_generate_contents_and_save_book(
-        output_dir="my_one_chapter_test",
-        debug=False
+        output_dir=output_dir,
+        debug=preview,
+        status_area=status_placeholder,
+        live_output_area=live_output_area,
+        extra_context=supporting_text
     )
