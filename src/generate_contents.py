@@ -1,24 +1,30 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import load_outline_from_file, parse_outline, extract_title_and_description
-from generate_parts import run_generate_parts_for_all
+from src.generate_outline import load_outline_from_file, parse_outline, extract_outline_metadata
+from src.generate_parts import run_generate_parts_for_all
 from tqdm import tqdm
 from yaspin import yaspin
 import textwrap
+import pypandoc
 
 load_dotenv()
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_endpoint = os.getenv("OPENAI_API_ENDPOINT")
+
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set.")
 
 client = OpenAI(
     api_key=openai_api_key,
+    base_url=openai_endpoint
 )
 
 
-def generate_contents(title: str, description: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]],) -> str:
+def generate_contents(title: str, description: str, audience: str, selectedChapter: int, selectedSection: int, selectedItem: int, selectedPart: int, part_title: str, previous_parts_titles: list[str], previous_parts_contents: list[str], chapters: list[str], sections: list[list[str]], items: list[list[list[str]]], extra_context: str = "") -> str:
+    import textwrap
+    
     # 1) Build a short “context” block listing what prior parts covered
     context_block = ""
     if previous_parts_titles:
@@ -29,6 +35,7 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
             snippet = " ".join(pcontent.strip().split()[:50])
             context_block += f"\"{snippet}...\"\n\n"
         context_block += "\n"
+    
 
     # 2) Instruct the model not to overlap
     prompt = f"""
@@ -36,7 +43,7 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     
     Your role is to:
     - Design and write engaging, structured, and comprehensive textbook sections.
-    - Tailor the material primarily to **second-year undergraduate students**, while remaining accessible and valuable to **professional software developers**. 
+    - Tailor the material to the following audience: **{audience}**
     Use a tone that is clear, professional, engaging, and moderately technical—balancing academic rigor with accessibility.
     
 
@@ -66,6 +73,10 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     Begin now:
     """
 
+    if extra_context:
+        prompt += f"\n\n### Additional Context Provided by User:\n{textwrap.dedent(extra_context[:2000])}..."
+
+
     response = client.chat.completions.create(
         model="gpt-4.1-2025-04-14",
         messages=[{"role": "user", "content": prompt}],
@@ -74,12 +85,15 @@ def generate_contents(title: str, description: str, selectedChapter: int, select
     return response.choices[0].message.content
 
 
-def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False):
+def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: bool = False, status_area=None, live_output_area=None, extra_context: str = ""):
 
     with yaspin(text="Generating the Outline...", color="yellow") as spinner:
         try:
-            raw_outline = load_outline_from_file("outline.md")
-            book_title, book_description = extract_title_and_description(raw_outline)
+            raw_outline = load_outline_from_file("src/outline.md")
+            metadata = extract_outline_metadata(raw_outline)
+            book_title = metadata["title"]
+            book_description = metadata["description"]
+            audience = metadata["audience"]
             spinner.ok("✔")
         except Exception as e:
             spinner.fail("✘")
@@ -90,7 +104,8 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
     
     if debug:
         chapters = chapters[:1]                 # Only Chapter 1
-        sections = [sections[0]]                # All sections in Chapter 1
+        sections = [sections[0][:1]]
+        items = [[[items[0][0][0]]]]            # Only one item with one part
 
         chapter_items = items[0]
         items = []
@@ -100,11 +115,10 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
         items = [items]
 
 
-
-
     parts = run_generate_parts_for_all(
         title=book_title,
         description=book_description,
+        audience=audience,
         chapters=chapters,
         sections=sections,
         items=items
@@ -118,9 +132,11 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
 
     # 1) Prepare output directory and file handle
     os.makedirs(output_dir, exist_ok=True)
-    book_path = os.path.join(output_dir, f"{book_title}.txt")
+    book_path_md = os.path.join(output_dir, f"{book_title}.md")
+    book_path_docx = os.path.join(output_dir, f"{book_title}.docx")
 
-    with open(book_path, "w", encoding="utf-8") as f:
+
+    with open(book_path_md, "w", encoding="utf-8") as f:
         # ──────────────────────────────────────────────────────────────────────
         # A) Title Page
         # ──────────────────────────────────────────────────────────────────────
@@ -170,11 +186,16 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
                     previous_contents = []
 
                     for p, part_title in enumerate(parts[c][s][i]):
+                        if status_area:
+                            status_area.markdown(
+                                f"✍️ Generating **Chapter {c+1}**, Section {s+1}, Item {i+1}, Part {p+1}**: {part_title}..."
+    )
                         f.write(f"PART {p+1}. {part_title}\n\n")
                         
                         content_text = generate_contents(
                             title=book_title,
                             description=book_description,
+                            audience=audience,
                             selectedChapter=c,
                             selectedSection=s,
                             selectedItem=i,
@@ -185,7 +206,13 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
                             chapters=chapters,
                             sections=sections,
                             items=items
-                        )  
+                        )
+                        
+                        # ✅ DISPLAY the generated part live in the UI
+                        if live_output_area:
+                            live_output_area.markdown(f"#### 📘 Chapter {c+1}, Section {s+1}, Item {i+1}, Part {p+1}: *{part_title}*")
+                            live_output_area.markdown(content_text.strip())
+
 
                         f.write(content_text.strip() + "\n\n")
 
@@ -202,10 +229,20 @@ def run_generate_contents_and_save_book(output_dir: str = "book_output", debug: 
         
         pbar.close()
         
-    print(f"📚 All contents generated and saved into:\n    {book_path}")
+    print(f"📚 All contents generated and saved into:\n    {book_path_md}")
+    
+    try:
+        output = pypandoc.convert_file(book_path_md, 'docx', outputfile=book_path_docx)
+        print(f"📄 Converted to DOCX: {book_path_docx}")
+    except Exception as e:
+        print(f"❌ Error converting to DOCX: {e}")
+
     
 if __name__ == "__main__":
     run_generate_contents_and_save_book(
-        output_dir="my_one_chapter_test",
-        debug=False
+        output_dir=output_dir,
+        debug=preview,
+        status_area=status_placeholder,
+        live_output_area=live_output_area,
+        extra_context=supporting_text
     )

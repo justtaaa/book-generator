@@ -1,21 +1,24 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-from generate_outline import load_outline_from_file, parse_outline, extract_title_and_description
+from src.generate_outline import load_outline_from_file, parse_outline, extract_outline_metadata
 from tqdm import tqdm
 import re
 
 load_dotenv()
 
 openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_endpoint = os.getenv("OPENAI_API_ENDPOINT")
+
 if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set.")
 
 client = OpenAI(
     api_key=openai_api_key,
+    base_url=openai_endpoint
 )
 
-def generate_parts(title: str, description: str, selectedChapter: int, chapters: list[str], selectedSection: int, sections: list[list[str]], selectedItem: int, items: list[list[list[str]]]) -> str:
+def generate_parts(title: str, description: str, audience: str, selectedChapter: int, chapters: list[str], selectedSection: int, sections: list[list[str]], selectedItem: int, items: list[list[list[str]]]) -> str:
     prompt = f"""
     You are a **textbook learning designer and author**, working on a book titled *"{title}"*.
 
@@ -39,7 +42,7 @@ def generate_parts(title: str, description: str, selectedChapter: int, chapters:
     - Be phrased as a **concise, self-contained title** (not a full sentence).
     - Progress in a **logical educational order** (intro → build-up → variations or use cases → advanced aspect → reflection or summary).
 
-    These parts will serve as learning blocks for **second-year undergraduates** and **junior-level software developers**. Structure them to **scaffold knowledge gradually** and avoid overlap.
+    These parts will serve as learning blocks for: **{audience}**. Structure them to **scaffold knowledge gradually** and avoid overlap.
 
     ---
 
@@ -79,7 +82,7 @@ def parse_parts(raw_parts_text: str) -> list[str]:
     return result
 
 
-def run_generate_parts_for_all(title: str, description: str, chapters: list[str], sections: list[list[str]], items: list[list[list[str]]]):
+def run_generate_parts_for_all(title: str, description: str, audience: str, chapters: list[str], sections: list[list[str]], items: list[list[list[str]]]):
 
     parts = {}
     
@@ -97,6 +100,7 @@ def run_generate_parts_for_all(title: str, description: str, chapters: list[str]
                     generated_text = generate_parts(
                         title=title,
                         description=description,
+                        audience=audience,
                         selectedChapter=chap_idx,
                         chapters=chapters,
                         selectedSection=sec_idx,
@@ -113,7 +117,10 @@ def run_generate_parts_for_all(title: str, description: str, chapters: list[str]
 
 if __name__ == "__main__":
     raw_outline = load_outline_from_file("outline.md")
-    book_title, book_description = extract_title_and_description(raw_outline)
+    metadata = extract_outline_metadata(raw_outline)
+    book_title = metadata["title"]
+    book_description = metadata["description"]
+    audience = metadata["audience"]
     print("=== RAW OUTLINE ===")
     print(raw_outline)
 
@@ -122,6 +129,7 @@ if __name__ == "__main__":
     all_generated = run_generate_parts_for_all(
         title=book_title,
         description=book_description,
+        audience=audience,
         chapters=chapters,
         sections=sections,
         items=items
